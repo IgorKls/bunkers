@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>БУНКЕРЫ ПСИКСА</title>
+        <style>
+        /* Сохраняем оригинальные стили */
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .bunkers-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .bunker-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .bunker-card.open {
+            border-left: 5px solid #4CAF50;
+        }
+        .bunker-card.closed {
+            border-left: 5px solid #f44336;
+        }
+        .add-bunker-form {
+            margin-bottom: 30px;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+        }
+        input, button {
+            padding: 10px;
+            margin: 5px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        button {
+            background-color: #2196F3;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            opacity: 0.9;
+        }
+        .timer {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .status {
+            font-size: 18px;
+            margin: 10px 0;
+        }
+        .hint {
+            color: #666;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="add-bunker-form">
+            <input type="text" id="bunkerName" placeholder="Название бункера">
+            <input type="text" 
+                   id="initialTime" 
+                   placeholder="Время (например 1:30)"
+                   pattern="[0-9]{1,2}:[0-5][0-9]">
+            <button onclick="addBunker()">Добавить бункер</button>
+        </div>
+        <div class="bunkers-grid" id="bunkersContainer"></div>
+    </div>
+
+    <script>
+        let bunkers = [];
+        const MAX_BUNKERS = 12;
+
+        class Bunker {
+            constructor(name, totalMinutes) {
+                this.id = Date.now();
+                this.name = name || `Бункер #${this.id.toString().slice(-4)}`;
+                this.startTime = Date.now();
+                this.totalMinutes = totalMinutes;
+                this.status = 'waiting';
+                this.endTime = this.startTime + (totalMinutes * 60000);
+                this.updateCycle();
+            }
+
+            updateCycle() {
+                const now = Date.now();
+                
+                if (this.status === 'waiting') {
+                    if (now >= this.endTime) {
+                        this.status = 'open';
+                        this.startTime = now;
+                        this.endTime = now + 86400000;
+                    }
+                    return;
+                }
+
+                const cycleTime = this.status === 'open' ? 86400000 : 259200000;
+                
+                if (now >= this.endTime) {
+                    this.status = this.status === 'open' ? 'closed' : 'open';
+                    this.startTime = now;
+                    this.endTime = now + (this.status === 'open' ? 86400000 : 259200000);
+                }
+            }
+
+            setNewName(newName) {
+                this.name = newName || this.name;
+            }
+
+            getRemainingTime() {
+                return Math.max(0, this.endTime - Date.now());
+            }
+
+            getDisplayTime() {
+                const ms = this.getRemainingTime();
+                const hours = Math.floor(ms / 3600000);
+                const minutes = Math.floor((ms % 3600000) / 60000);
+                const seconds = Math.floor((ms % 60000) / 1000);
+                return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }
+        }
+
+        function parseTimeInput(input) {
+            const parts = input.split(':');
+            if (parts.length !== 2) return null;
+            
+            const hours = parseInt(parts[0], 10);
+            const minutes = parseInt(parts[1], 10);
+            
+            if (isNaN(hours) || hours < 0 || 
+                isNaN(minutes) || minutes < 0 || minutes > 59) {
+                return null;
+            }
+            
+            return hours * 60 + minutes;
+        }
+
+        function addBunker() {
+            if (bunkers.length >= MAX_BUNKERS) {
+                alert('Максимум 12 бункеров!');
+                return;
+            }
+
+            const nameInput = document.getElementById('bunkerName');
+            const timeInput = document.getElementById('initialTime');
+            
+            const totalMinutes = parseTimeInput(timeInput.value);
+            const name = nameInput.value.trim();
+            
+            if (totalMinutes === null || totalMinutes < 0) {
+                alert('Введите время в формате ЧЧ:ММ (например 1:30)');
+                return;
+            }
+
+            const bunker = new Bunker(name, totalMinutes);
+            bunkers.push(bunker);
+            
+            nameInput.value = '';
+            timeInput.value = '';
+            saveBunkers();
+            renderBunkers();
+        }
+
+        function editBunkerName(id) {
+            const bunker = bunkers.find(b => b.id === id);
+            const newName = prompt('Введите новое название бункера:', bunker.name);
+            if (newName !== null) {
+                bunker.setNewName(newName.trim());
+                saveBunkers();
+                renderBunkers();
+            }
+        }
+
+        function deleteBunker(id) {
+            bunkers = bunkers.filter(b => b.id !== id);
+            saveBunkers();
+            renderBunkers();
+        }
+
+        function updateTimers() {
+            bunkers.forEach(bunker => {
+                bunker.updateCycle();
+            });
+            renderBunkers();
+        }
+
+        function renderBunkers() {
+            const container = document.getElementById('bunkersContainer');
+            container.innerHTML = '';
+
+            bunkers.forEach(bunker => {
+                const card = document.createElement('div');
+                card.className = `bunker-card ${bunker.status}`;
+                card.innerHTML = `
+                    <h3>
+                        <span>${bunker.name}</span>
+                        <button class="edit-name-btn" onclick="editBunkerName(${bunker.id})">✎</button>
+                    </h3>
+                    <div class="status">Статус: ${bunker.status === 'open' ? 'Открыт' : bunker.status === 'closed' ? 'Закрыт' : 'Ожидание открытия'}</div>
+                    <div class="timer">${bunker.getDisplayTime()}</div>
+                    <button onclick="deleteBunker(${bunker.id})">Удалить</button>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function saveBunkers() {
+            localStorage.setItem('bunkers', JSON.stringify(bunkers));
+        }
+
+        function loadBunkers() {
+            const saved = localStorage.getItem('bunkers');
+            if (saved) {
+                const data = JSON.parse(saved);
+                bunkers = data.map(d => {
+                    const bunker = new Bunker(d.name, 0);
+                    Object.assign(bunker, d);
+                    return bunker;
+                });
+            }
+        }
+
+        loadBunkers();
+        setInterval(updateTimers, 1000);
+        renderBunkers();
+    </script>
+</body>
+</html>
